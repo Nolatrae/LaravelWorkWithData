@@ -3,105 +3,89 @@
 namespace App\Http\Controllers;
 
 use App\Models\Post;
-
+use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use App\Http\Resources\PostResource;
 
 class PostController extends Controller
 {
-    public function index() {
-        // $post = Post::find(1);
-        // $posts = Post::all();
-        // //dd($post->title);
-        // dump($posts);
-        // foreach ($posts as $post) {
-        //     dump($post->title);
-        // }
-        // dump(Post::where('likes', 20)->first());
-        // $posts = Post::all();
-        // dump($posts);
+    public function index(Request $request)
+    {
+        $searchTerm = $request->input('searchTerm');
 
-        $posts = Post::all();
-        return view("post.index", compact('posts'));
-    }
-    
-    
-    public function create() {
-        // $postsArr = [[
-        //     'title' => 'bla bla bla',
-        //     'content' => 'bla bla bla bla',
-        //     'image' => "image.png",
-        //     'likes' => 20,
-        //     'is_published' => 1,
-        // ],
-        // [
-        //     'title' => 'second bla bla bla',
-        //     'content' => 'second bla bla bla bla',
-        //     'image' => "secondimage.png",
-        //     'likes' => 330,
-        //     'is_published' => 1,
-        // ]];
-        // Post::create([
-        //         'title' => 'bla bla bla',
-        //         'content' => 'bla bla bla bla',
-        //         'image' => "image.png",
-        //         'likes' => 20,
-        //         'is_published' => 1,
-        // ]);
-        // foreach($postsArr as $item) {
-        //     dump($item);
-        //     Post::create($item);
-        // }
+        $posts = Post::when($searchTerm, function ($query, $searchTerm) {
+            return $query->titleContains($searchTerm);
+        })->active()->with('comments', 'categories')->get();
 
-        // dd('created');
-
-            return view('post.create');
-
+        return PostResource::collection($posts);
     }
 
-    public function store() {
-        $data = request()->validate([
-            'title'=> '',
-            'content'=> '',
+    public function create()
+    {
+        $categories = Category::all();
+        return view('posts.create', compact('categories'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'categories' => 'array',
         ]);
-        Post::create($data);
-        return redirect()->route('post.index');
+
+        $post = Post::create($request->all());
+        $post->categories()->attach($request->input('categories'));
+
+        return response()->json(['message' => 'Post created successfully'], 201);
     }
 
-    public function show(Post $post) {
-
-        return view('post.show', compact('post'));
+    public function show($id)
+    {
+        $post = Post::with('comments', 'categories')->find($id);
+        return new PostResource($post);
     }
 
-    public function edit(Post $post){
-        return view('post.edit', compact('post'));
+    public function edit($id)
+    {
+        $post = Post::with('categories')->find($id);
+        $categories = Category::all();
+        return view('posts.edit', compact('post', 'categories'));
     }
 
-    public function update(Post $post) {
-        // $post = Post::find(6);
-        // $post->update([
-        //     'title' => 'update',
-        //     'content' => 'update'
-        // ]);
-        // dd('update');
-    
-        $data = request()->validate([
-            'title'=> '',
-            'content'=> '',
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'categories' => 'array',
         ]);
-        $post->update($data);
-        return redirect()->route('post.show', $post->id);
 
+        $post = Post::find($id);
+        $post->update($request->all());
+        $post->categories()->sync($request->input('categories'));
+
+        return response()->json(['message' => 'Post updated successfully'], 200);
     }
 
-    public function delete(){
-        $post = Post::find(2);
-        dump($post);
-        $post -> delete();
-        dd('deleted');
-    }
-
-    public function destroy(Post $post) {
+    public function destroy($id)
+    {
+        $post = Post::findOrFail($id);
         $post->delete();
-        return redirect()->route('post.index');
+
+        return response()->json(['message' => 'Post deleted successfully'], 200);
+    }
+
+    public function activePosts()
+    {
+        $posts = Post::active()->get();
+        return PostResource::collection($posts);
+    }
+
+    public function searchPosts($searchTerm)
+    {
+        $posts = Post::titleContains($searchTerm)->active()->with('comments', 'categories')->get();
+        return PostResource::collection($posts);
     }
 }
